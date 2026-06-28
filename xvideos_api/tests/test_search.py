@@ -1,4 +1,4 @@
-from ..xvideos_api import Client, Sort, SortVideoTime, SortQuality, SortDate, NotFound
+from ..api import Client, Sort, SortVideoTime, SortQuality, SortDate, NotFound
 import pytest
 
 # Initialize query

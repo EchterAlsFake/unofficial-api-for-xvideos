@@ -1,5 +1,5 @@
 import pytest
-from ..xvideos_api import Client
+from ..api import Client
 
 
 
