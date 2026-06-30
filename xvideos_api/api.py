@@ -22,7 +22,6 @@ import html
 import logging
 import asyncio
 import argparse
-import tracemalloc
 from typing import AsyncGenerator
 from dataclasses import dataclass
 from functools import cached_property
@@ -117,7 +116,7 @@ session_token_auth = <token>
                                          on_page_error=on_page_error,
                                          keep_original_order=keep_original_order):
 
-            yield await video.init()
+            yield video
 
     async def get_liked_videos(self, pages: int = 2, videos_concurrency: int | None = None,
                                      pages_concurrency: int | None = None,
@@ -138,7 +137,7 @@ session_token_auth = <token>
                                          on_page_error=on_page_error,
                                          keep_original_order=keep_original_order):
 
-            yield await video.init()
+            yield video
     async def get_watch_later_videos(self, pages: int = 2, videos_concurrency: int | None = None,
                                      pages_concurrency: int | None = None,
                                      on_video_error: on_error_hint = on_error,
@@ -158,7 +157,7 @@ session_token_auth = <token>
                                          on_page_error=on_page_error,
                                          keep_original_order=keep_original_order):
 
-            yield await video.init()
+            yield video
 
 
 @dataclass(slots=True)
@@ -551,15 +550,15 @@ class Channel(Helper):
         return self._about_me.css_first('div.profile-pic img').attributes.get('src')
 
     @cached_property
-    def total_videos(self):
+    def total_videos(self) -> int:
         return int(self.data["nb_videos"])
 
     @cached_property
-    def per_page(self):
+    def per_page(self) -> int:
         return int(self.data["nb_per_page"])
 
     @cached_property
-    def total_pages(self):
+    def total_pages(self) -> int:
         return math.ceil(self.total_videos / self.per_page)
 
     async def videos(self, pages: int = 0, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
@@ -603,10 +602,6 @@ class Channel(Helper):
         return self._about_me.css_first('#pinfo-video-views span').text(strip=True)
 
     @cached_property
-    def region(self) -> str:
-        return self._about_me.css_first('#pinfo-region span').text(strip=True)
-
-    @cached_property
     def signed_up(self) -> str:
         return self._about_me.css_first('#pinfo-signedup span').text(strip=True)
 
@@ -614,18 +609,17 @@ class Channel(Helper):
     def last_activity(self) -> str:
         return self._about_me.css_first('#pinfo-lastactivity span').text(strip=True)
 
-    @cached_property
-    def worked_for_with(self):
+    async def worked_for_with(self):
         names = self._about_me.css('#pinfo-workedfor a')
         links = [a.attributes.get('href') for a in names if a.attributes.get('href')]
         for link in links:
             if not "profile" in link:
                 channel = Channel(url=f"https://xvideos.com/channels{link}", core=self.core)
-                return channel.init()
+                return await channel.init()
 
             else:
                 channel = Channel(url=f"https://xvideos.com{link}", core=self.core)
-                return channel.init()
+                return await channel.init()
 
 
 class Pornstar(Helper):
@@ -670,15 +664,15 @@ class Pornstar(Helper):
         return self._about_me.css_first('div.profile-pic img').attributes.get('src')
 
     @cached_property
-    def total_videos(self):
+    def total_videos(self) -> int:
         return int(self.data["nb_videos"])
 
     @cached_property
-    def per_page(self):
+    def per_page(self) -> int:
         return int(self.data["nb_per_page"])
 
     @cached_property
-    def total_pages(self):
+    def total_pages(self) -> int:
         return math.ceil(self.total_videos / self.per_page)
 
     async def videos(self, pages: int = 0, videos_concurrency: int | None = None, pages_concurrency: int | None = None,
@@ -757,7 +751,6 @@ class Pornstar(Helper):
         """Returns the video tags the pornstar is often featured in"""
         return self._about_me.css_first('#pinfo-video-tags span').text(strip=True)
 
-    @cached_property
     async def worked_for_with(self) -> AsyncGenerator[Channel, None]:
         """
         Returns the channels the pornstar has worked with as a Channel object (Generator)

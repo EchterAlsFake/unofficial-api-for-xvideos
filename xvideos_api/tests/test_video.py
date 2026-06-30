@@ -1,15 +1,22 @@
 import pytest
+from base_api import DownloadConfigHLS
+
 from ..api import Client, Channel
 
 url = "https://de.xvideos.com/video.ohplvhk02fd/meine_lesbische_freundin_hat_mich_beim_fremdgehen_mit_einem_zufalligen_typen_erwischt_aber_ich_kann_nicht_aufhoren_und_ficke_ihn_weiter_vor_ihren_augen_"
 # This URL will be used for all tests
 
-client = Client()
-video = None
+
 
 @pytest.mark.asyncio
 async def test_get_video():
-    global video
+    try:
+        import av
+
+    except:
+        raise "Can not run without AV!"
+
+    client = Client()
     video = await client.get_video(url)
     assert isinstance(video.title, str) and len(video.title) > 0
     assert isinstance(video.length, str) and len(video.length) > 0
@@ -27,3 +34,13 @@ async def test_get_video():
 
     author = await video.author
     assert isinstance(author.name, str)
+
+
+    config_1 = DownloadConfigHLS(quality="best", return_report=True, remux=True)
+    config_2 = DownloadConfigHLS(quality="best", return_report=True)
+
+    result_1 = await video.download(config_1)
+    result_2 = await video.download(config_2)
+
+    assert result_1["status"] == "completed"
+    assert result_2["status"] == "completed"

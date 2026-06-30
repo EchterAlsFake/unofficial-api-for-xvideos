@@ -1,4 +1,7 @@
-class Sort:
+from enum import StrEnum
+
+
+class Sort(StrEnum):
     Sort_relevance = "relevance"
     Sort_upload_date = "uploaddate"
     Sort_rating = "rating"
@@ -7,7 +10,7 @@ class Sort:
     Sort_random = "random"
 
 
-class SortDate:
+class SortDate(StrEnum):
     Sort_all = "all"
     Sort_last_3_days = "today"
     Sort_week = "week"
@@ -16,7 +19,7 @@ class SortDate:
     Sort_last_6_months = "6month"
 
 
-class SortVideoTime:
+class SortVideoTime(StrEnum):
     Sort_all = "allduration"
     Sort_short = "1-3min"
     Sort_middle = "3-10min"
@@ -25,7 +28,7 @@ class SortVideoTime:
     Sort_really_long = "20min_more"
 
 
-class SortQuality:
+class SortQuality(StrEnum):
     Sort_all = "all"
     Sort_720p = "hd"
     Sort_1080_plus = "1080P"
