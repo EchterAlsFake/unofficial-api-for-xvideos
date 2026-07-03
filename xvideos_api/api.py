@@ -298,6 +298,12 @@ class VideoBuilder:
         self.quality_url_map = None
         self.available_qualities = None
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.clean()
+
     def _extract_metadata_sync(self):
         """
         Synchronous method containing all the CPU-heavy HTML parsing work.
