@@ -12,14 +12,15 @@ async def test_channel():
     assert isinstance(channel.total_pages, int)
     assert isinstance(channel.per_page, int)
     assert isinstance(channel.total_videos, int)
-    assert isinstance(channel.country, str)
     assert isinstance(channel.profile_hits, str)
     assert isinstance(channel.subscribers, str)
     assert isinstance(channel.signed_up, str)
-    assert isinstance(channel.last_activity, str)
+    assert isinstance(channel.last_activity, (str, type(None)))
+    assert isinstance(channel.total_videos_views, str)
+    assert isinstance(channel.worked_for_with_links, list)
 
-    stuff = await channel.worked_for_with()
-    assert isinstance(stuff.name, str)
+    for thing in await channel.worked_for_with():
+        assert isinstance(thing.name, str)
 
     idx = 0
     async for result in channel.videos():

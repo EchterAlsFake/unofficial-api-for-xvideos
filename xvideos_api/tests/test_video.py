@@ -31,8 +31,12 @@ async def test_get_video():
     assert isinstance(video.preview_video_url, str) and len(video.preview_video_url) > 0
     assert isinstance(video.publish_date, str) and len(video.publish_date) > 0
     assert isinstance(video.content_url, str) and len(video.content_url) > 0
+    assert isinstance(video.author_link, str) and len(video.author_link) > 0
+    assert isinstance(video.pornstars_urls, list)
+    assert isinstance(video.embed_url, str) and len(video.embed_url) > 0
+    assert isinstance(video.m3u8_base_url, str) and len(video.m3u8_base_url) > 0
 
-    author = await video.author
+    author = await video.get_author
     assert isinstance(author.name, str)
 
 
