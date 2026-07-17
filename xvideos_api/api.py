@@ -25,6 +25,7 @@ from xvideos_api.modules.sorting import Sort, SortVideoTime, SortQuality, SortDa
 
 
 logger = logging.getLogger("XVideos API")
+logger.addHandler(logging.NullHandler())
 
 
 async def on_error(url: str, error: Exception, attempt: int) -> bool:
