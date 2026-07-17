@@ -1,19 +1,5 @@
-"""
-Copyright (C) 2024-2025 Johannes Habel
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""
+from __future__ import annotations
+import copy
 import os
 import re
 import math
@@ -38,7 +24,7 @@ from xvideos_api.modules.consts import (cookies, headers, extractor_account, REG
 from xvideos_api.modules.sorting import Sort, SortVideoTime, SortQuality, SortDate
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("XVideos API")
 
 
 async def on_error(url: str, error: Exception, attempt: int) -> bool:
@@ -285,7 +271,7 @@ class Video(BaseMedia):
         :param configuration:
         :return:
         """
-        config = configuration
+        config = copy.deepcopy(configuration)
         if not config.no_title:
             config.path = os.path.join(config.path, f"{self.title}.mp4")
 
@@ -427,9 +413,9 @@ class BaseChannelPornstar(BaseMedia):
 
         if pages == 0:
             pages = self.total_pages
-
+        url = self.url
         helper = Helper(core=self.core, constructor=Video)
-        page_urls = [f"{self.url}/videos/best/{i}" for i in range(pages)] # Don't exceed total available pages
+        page_urls = [f"{url}/videos/best/{i}" for i in range(pages)] # Don't exceed total available pages
         videos_concurrency = videos_concurrency or self.core.configuration.videos_concurrency
         pages_concurrency = pages_concurrency or self.core.configuration.pages_concurrency
         assert videos_concurrency and pages_concurrency

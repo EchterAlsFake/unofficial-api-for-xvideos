@@ -49,7 +49,9 @@ av = ["av"]
 Homepage = "https://github.com/EchterAlsFake/unofficial-api-for-xvideos"
 Repository = "https://github.com/EchterAlsFake/unofficial-api-for-xvideos"
 "Bug Tracker" = "https://github.com/EchterAlsFake/unofficial-api-for-xvideos/issues"
-
+"Support me on Ko-Fi" = "https://ko-fi.com/EchterAlsFake"
+"Donate via PayPal" = "https://paypal.me/EchterAlsFake"
+"Donate via Crypto" = "https://nowpayments.io/donation/EchterAlsFake"
 
 [project.scripts]
 xvideos_api = "xvideos_api.xvideos_api:main"

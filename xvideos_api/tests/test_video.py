@@ -40,8 +40,8 @@ async def test_get_video():
     assert isinstance(author.name, str)
 
 
-    config_1 = DownloadConfigHLS(quality="best", return_report=True, remux=True)
-    config_2 = DownloadConfigHLS(quality="best", return_report=True)
+    config_1 = DownloadConfigHLS(quality="worst", return_report=True, remux=True)
+    config_2 = DownloadConfigHLS(quality="worst", return_report=True)
 
     result_1 = await video.download(config_1)
     result_2 = await video.download(config_2)
