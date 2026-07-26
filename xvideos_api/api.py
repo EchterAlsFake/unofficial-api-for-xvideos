@@ -461,6 +461,7 @@ class Pornstar(BaseChannelPornstar):
 class Client:
     def __init__(self, core: BaseCore = BaseCore()):
         self.core = core
+        self.account = None
         self.core.initialize_session()
         self.helper = Helper(core=self.core, constructor=Video)
         logger.info("Client initialized")
@@ -551,10 +552,11 @@ class Client:
 
     def get_account(self, cookies: dict | None = None) -> Account:
         if cookies:
-            account = Account(core=self.core, cookies=cookies)
+            self.account = Account(core=self.core, cookies=cookies)
         else:
-            account = Account(core=self.core)
-        return account
+            self.account = Account(core=self.core)
+
+        return self.account
 
 
 async def run_main():
