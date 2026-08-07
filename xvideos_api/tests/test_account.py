@@ -15,14 +15,14 @@ async def test_account_methods():
     # Test recommended videos
     idx = 0
     async for result in account.get_recommended_videos(pages=1, videos_concurrency=1, pages_concurrency=1):
-        assert isinstance(result.video.title, str)
+        assert isinstance(result.unwrap().title, str)
         idx += 1
         if idx >= 3:
             break
 # Test liked videos
     idx = 0
     async for result in account.get_liked_videos(pages=1, videos_concurrency=1, pages_concurrency=1):
-        assert isinstance(result.video.title, str)
+        assert isinstance(result.unwrap().title, str)
         idx += 1
         if idx >= 3:
             break
@@ -30,7 +30,7 @@ async def test_account_methods():
     # Test watch later videos
     idx = 0
     async for result in account.get_watch_later_videos(pages=1, videos_concurrency=1, pages_concurrency=1):
-        assert isinstance(result.video.title, str)
+        assert isinstance(result.unwrap().title, str)
         idx += 1
         if idx >= 3:
             break

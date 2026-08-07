@@ -12,8 +12,9 @@ def client():
 async def validate_video_objects(videos):
     """Helper function to validate video objects."""
     idx = 0
-    async for video in videos:
+    async for result in videos:
         try:
+            video = result.unwrap()
             print(video.title)
             assert isinstance(video.title, str) and len(video.title) > 0, f"Invalid video title at index {idx}."
             if idx == 3:  # Validate up to 4 videos for brevity

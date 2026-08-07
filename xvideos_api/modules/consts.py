@@ -39,6 +39,8 @@ def extractor_account(html: str) -> list[dict[str, str]]:
     divs = tree.css("div.frame-block")
     for video in divs:
         _video_url = video.css_first("a").attributes.get("href")
+        if not isinstance(_video_url, str) or not _video_url:
+            continue
         video_url = f"https://www.xvideos.com{_video_url}"
 
         _img = video.css_first("img")
@@ -82,7 +84,6 @@ def is_next_page(html_content: str, current_page: int | None = None):
     """
 
     tree = LexborHTMLParser(html_content)
-
 
 
 
