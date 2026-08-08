@@ -1,8 +1,14 @@
 from ..api import Client, Sort, SortVideoTime, SortQuality, SortDate, NotFound
+from base_api.modules.config import IteratorConfig
 import pytest
 
 # Initialize query
 query = "Mia Khalifa"
+iterator_config = IteratorConfig(
+    max_item_concurrency=1,
+    max_page_concurrency=1,
+    load_specific_sources=("html",),
+)
 
 @pytest.fixture
 def client():
@@ -79,13 +85,13 @@ async def test_sort_quality_search(quality_option, client):
 @pytest.mark.asyncio
 async def test_sort_date_search(date_option, client):
     """Test sorting by different SortDate options."""
-    videos = client.search(query, sorting_date=date_option, videos_concurrency=1, pages_concurrency=1)
+    videos = client.search(query, sorting_date=date_option, iterator_config=iterator_config)
     await validate_video_objects(videos)
 
 @pytest.mark.asyncio
 async def test_base_search(client):
     """Test basic search functionality."""
-    videos = client.search(query, videos_concurrency=1, pages_concurrency=1)
+    videos = client.search(query, iterator_config=iterator_config)
     await validate_video_objects(videos)
 
 # Refactored by ChatGPT lol

@@ -1,5 +1,6 @@
 import pytest
 from ..api import Client
+from base_api.modules.config import IteratorConfig
 
 
 
@@ -26,7 +27,12 @@ async def test_pornstar():
         assert isinstance(channel.name, str)
 
     idx = 0
-    async for result in pornstar.videos(videos_concurrency=1, pages_concurrency=1):
+    iterator_config = IteratorConfig(
+        max_item_concurrency=1,
+        max_page_concurrency=1,
+        load_specific_sources=("html",),
+    )
+    async for result in pornstar.videos(iterator_config=iterator_config):
         video = result.unwrap()
         assert isinstance(video.title, str) and len(video.title) >= 3
         idx += 1
