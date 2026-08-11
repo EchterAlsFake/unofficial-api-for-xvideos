@@ -55,8 +55,8 @@ HELPER_RETRY = RetryPolicy(max_attempts=4, base_delay=0.5, max_delay=8.0)
 def make_iterator_config(*, page_request_method: str = "GET") -> IteratorConfig:
     return IteratorConfig(
         load_specific_sources=("html",),
-        item_retry=HELPER_RETRY,
-        page_retry=HELPER_RETRY,
+        item_retry=None,
+        page_retry=None,
         page_error_mode=ErrorMode.SKIP,
         item_error_handler=None,
         page_error_handler=None,
@@ -137,7 +137,7 @@ session_token_auth = <token>
         self,
         pages: int = 2,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
 
         page_urls = [f"https://www.xvideos.com/history/{page}" for page in range(pages)]
         if iterator_config is None:
@@ -156,7 +156,7 @@ session_token_auth = <token>
         self,
         pages: int = 2,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
 
         page_urls = [f"https://www.xvideos.com/videos-i-like/{page}" for page in range(pages)]
         if iterator_config is None:
@@ -175,7 +175,7 @@ session_token_auth = <token>
         self,
         pages: int = 2,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
 
         page_urls = [f"https://www.xvideos.com/watch-later/{page}" for page in range(pages)]
         if iterator_config is None:
@@ -438,7 +438,7 @@ class BaseChannelPornstar(BaseMedia):
         self,
         pages: int = 0,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         total_pages = await self.get_field("total_pages")
         if pages > total_pages:
             pages = total_pages
@@ -516,7 +516,7 @@ class Client:
                sort_quality: str | SortQuality = SortQuality.Sort_all,
                pages: int | str = "all",
                iterator_config: IteratorConfig | None = None,
-                     ) -> AsyncGenerator[ScrapeResult, None]:
+                     ) -> AsyncGenerator[ScrapeResult[Video], None]:
 
 
         query = query.replace(" ", "+")
@@ -559,7 +559,7 @@ class Client:
         url: str,
         pages: int = 2,
         iterator_config: IteratorConfig | None = None,
-    ) -> AsyncGenerator[ScrapeResult, None]:
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
         page_urls = [f"{url}/{page}" for page in range(pages)]
         if iterator_config is None:
             iterator_config = make_iterator_config()
