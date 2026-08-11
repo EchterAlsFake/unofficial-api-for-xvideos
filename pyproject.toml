@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "unofficial-api-for-xvideos"
-version = "2.4"
+version = "2.5"
 description = "An asynchronous Python API Wrapper and Scraper for xvideos.com"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
