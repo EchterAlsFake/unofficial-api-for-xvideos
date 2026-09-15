@@ -3,8 +3,8 @@ import re
 from selectolax.lexbor import LexborHTMLParser
 
 
-REGEX_VIDEO_M3U8 = re.compile(r"html5player\.setVideoHLS\('([^']+)'\);")
-REGEX_IFRAME = re.compile(r'video-embed" type="text" readonly value="(.*?)" class="form-control"')
+REGEX_VIDEO_M3U8 = re.compile(r"html5player\.setVideoHLS\('([^']+)'\)")
+REGEX_IFRAME = re.compile(r'id=["\']copy-video-embed["\'][^>]*value=["\']([^"\']+)["\']')
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
@@ -36,32 +36,36 @@ def extractor_account(html: str) -> list[dict[str, str]]:
     tree = LexborHTMLParser(html)
 
     # Target the main container blocks
-    divs = tree.css("div.frame-block")
+    divs = tree.css("div.frame-block") or tree.css("div.thumb-block")
     for video in divs:
-        _video_url = video.css_first("a").attributes.get("href")
+        a_node = video.css_first("a[href]")
+        if not a_node:
+            continue
+        _video_url = a_node.attributes.get("href")
         if not isinstance(_video_url, str) or not _video_url:
             continue
-        video_url = f"https://www.xvideos.com{_video_url}"
+        video_url = _video_url if _video_url.startswith("http") else f"https://www.xvideos.com{_video_url}"
 
         _img = video.css_first("img")
-        thumbnail = _img.attributes.get("src")
-        video_id = _img.attributes.get("data-videoid")
-        preview_video = _img.attributes.get("data-pvv")
+        thumbnail = (_img.attributes.get("src") or _img.attributes.get("data-src")) if _img else None
+        video_id = (_img.attributes.get("data-videoid") if _img else None) or video.attributes.get("data-id")
+        preview_video = _img.attributes.get("data-pvv") if _img else None
 
         _meta = video.css_first("div.thumb-under")
-        title = _meta.css_first("a").text()
-        length_node = _meta.css_first("span.duration")
+        title_node = _meta.css_first("p.title a") or _meta.css_first("a") if _meta else None
+        title = title_node.text(strip=True) if title_node else None
+        length_node = _meta.css_first("span.duration") if _meta else None
         length = length_node.text(strip=True) if length_node else None
 
-        other = _meta.css_first("p.metadata")
+        other = _meta.css_first("p.metadata") if _meta else None
         views = None
-        views_node = other.css_first("span.bg > span:not(.duration) > span")
-        if views_node:
-            raw_text = views_node.text(strip=True)
-            if raw_text.startswith("-"):
-                raw_text = raw_text[1:].strip()
+        if other:
+            views_node = other.css_first("span.bg > span:not(.duration) > span")
+            if views_node:
+                raw_text = views_node.text(strip=True)
+                if raw_text.startswith("-"):
+                    raw_text = raw_text[1:].strip()
                 views = raw_text.split()[0] if " " in raw_text else raw_text
-
 
         stuff = {
             "title": title,

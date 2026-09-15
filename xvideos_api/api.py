@@ -216,44 +216,111 @@ class Video(BaseMedia):
                 logger.warning("Skipping invalid JSON-LD metadata for %s", url, exc_info=True)
                 continue
 
-        title = html.unescape(data.get("name"))
-        description = data.get("description")
-        thumbnail_url = (data.get("thumbnailUrl") or [None])[0] if isinstance(data.get("thumbnailUrl"), list) else data.get("thumbnailUrl")
+        # Title
+        title = None
+        if raw_title := data.get("name"):
+            title = html.unescape(raw_title)
+        elif match := re.search(r"html5player\.setVideoTitle\('([^']+)'\)", html_content):
+            title = html.unescape(match.group(1))
+        elif title_node := parser.css_first("#title-auto-tr, .page-title, .video-title"):
+            title = title_node.text(strip=True)
+
+        # Description
+        description = html.unescape(data["description"]) if data.get("description") else None
+        if not description:
+            if meta := parser.css_first('meta[name="description"], meta[property="og:description"]'):
+                description = meta.attributes.get("content")
+        if not description:
+            description = title
+
+        # Thumbnail URL
+        raw_thumb = data.get("thumbnailUrl")
+        thumbnail_url = None
+        if isinstance(raw_thumb, list) and raw_thumb:
+            thumbnail_url = raw_thumb[0]
+        elif isinstance(raw_thumb, str):
+            thumbnail_url = raw_thumb
+        elif match := re.search(r"html5player\.setThumbUrl\('([^']+)'\)", html_content):
+            thumbnail_url = match.group(1)
+        elif match := re.search(r"html5player\.setThumbUrl169\('([^']+)'\)", html_content):
+            thumbnail_url = match.group(1)
+        elif img_node := parser.css_first(".video-pic img"):
+            thumbnail_url = img_node.attributes.get("src")
+
+        # Preview video URL
+        preview_video_url = f"{thumbnail_url.rsplit('/', 1)[0]}/preview.mp4" if thumbnail_url else None
+
+        # Publish date
         publish_date = data.get("uploadDate")
+        if not publish_date:
+            if match := re.search(r"<!--\s*dispo\s*-\s*([A-Za-z]+,\s*\d+\s+[A-Za-z]+\s+\d+\s+\d+:\d+:\d+\s+[+\-]?\d*)", html_content):
+                publish_date = match.group(1)
+
+        # Content URL
         content_url = data.get("contentUrl")
-        m3u8_base_url = REGEX_VIDEO_M3U8.search(html_content).group(1)
-        thumb = html.unescape(data.get("thumbnailUrl"))[0]
-        base_url = re.sub(r'/thumbs(169)?(xnxx)?(l*|poster)/', '/videopreview/', thumb[:thumb.rfind("/")])
-        suffix = re.search(r'-(\d+)', base_url)
-        base_url = re.sub(r'-(\d+)', '', base_url) if suffix else base_url
-        preview_video_url = f"{base_url}_169{suffix.group(0) if suffix else ''}.mp4"
-        elements = parser.css("a.is-keyword.btn.btn-default")
-        tags = [tag.text() for tag in elements]
-        views = parser.css_first("span.icon-f.icf-eye").next.text(strip=True)
-        likes = parser.css_first("span.rating-good-nbr").text(strip=True)
-        dislikes = parser.css_first("span.rating-bad-nbr").text(strip=True)
-        rating_votes = parser.css_first("span.rating-total-txt").text(strip=True)
-        comment_count = parser.css_first("button.comments.tab-button").next.next.text(strip=True)
-        embed_url = REGEX_IFRAME.search(html.unescape(html_content)).group(1)
-        length = parser.css_first("span.duration").text(strip=True)
+        if not content_url:
+            if match := (
+                re.search(r"html5player\.setVideoUrlHigh\('([^']+)'\)", html_content)
+                or re.search(r"html5player\.setVideoUrlLow\('([^']+)'\)", html_content)
+            ):
+                content_url = match.group(1)
 
-        try:
-            link = parser.css_first("li.main-uploader").css_first('a').attributes.get("href")
-            assert isinstance(link, str)
-            if not link.startswith("/profiles"):
-                author_link = f"https://xvideos.com/channels"
+        # HLS master playlist URL
+        m = REGEX_VIDEO_M3U8.search(html_content) or re.search(r"html5player\.setVideoHLS\('([^']+)'\)", html_content)
+        m3u8_base_url = m.group(1) if m else None
 
-            else:
-                author_link = f"https://xvideos.com{link}"
+        # Tags
+        tags = [tag.text(strip=True) for tag in parser.css("a.is-keyword") if tag.text(strip=True)]
 
-        except AttributeError:
-            author_link = None
+        # Views
+        views_node = parser.css_first("#v-views strong.mobile-hide, #v-views strong")
+        views = views_node.text(strip=True) if views_node else None
+        if not views and (eye := parser.css_first("span.icon-f.icf-eye")):
+            views = eye.parent.text(strip=True) if eye.parent else None
 
+        # Likes, dislikes, rating votes
+        likes_node = parser.css_first("span.rating-good-nbr")
+        likes = likes_node.text(strip=True) if likes_node else "0"
 
-        _pornstars = parser.css('li.model')
-        pornstars = []
-        for pornstar in _pornstars:
-            pornstars.append(f"https://xvideos.com{pornstar.next.attributes.get('href')}")
+        dislikes_node = parser.css_first("span.rating-bad-nbr")
+        dislikes = dislikes_node.text(strip=True) if dislikes_node else "0"
+
+        rating_votes_node = parser.css_first("span.rating-total-txt")
+        rating_votes = rating_votes_node.text(strip=True) if rating_votes_node else "0"
+
+        # Comment count
+        comment_node = parser.css_first("button.comments .badge, .thread-node-children-count.badge")
+        comment_count = comment_node.text(strip=True) if comment_node else "0"
+
+        # Embed URL
+        embed_node = parser.css_first("#copy-video-embed")
+        if embed_node and (raw_embed := embed_node.attributes.get("value")):
+            embed_url = raw_embed
+        elif match := (REGEX_IFRAME.search(html_content) or re.search(r'id=["\']copy-video-embed["\'][^>]*value=["\']([^"\']+)["\']', html_content)):
+            embed_url = html.unescape(match.group(1))
+        elif match := re.search(r"html5player\.setEncodedIdVideo\('([^']+)'\)", html_content):
+            embed_url = f'<iframe src="https://www.xvideos.com/embedframe/{match.group(1)}" frameborder=0 width=510 height=400 scrolling=no allowfullscreen=allowfullscreen></iframe>'
+        else:
+            embed_url = None
+
+        # Duration / length
+        length_node = parser.css_first("span.duration")
+        length = length_node.text(strip=True) if length_node else None
+
+        # Author link
+        author_link = None
+        uploader_node = parser.css_first("li.main-uploader a")
+        if uploader_node and (href := uploader_node.attributes.get("href")):
+            author_link = href if href.startswith("http") else f"https://xvideos.com{href}"
+        elif match := re.search(r"html5player\.setUploaderName\('([^']+)'\)", html_content):
+            author_link = f"https://xvideos.com/{match.group(1)}"
+
+        # Featured pornstars
+        pornstars_urls = []
+        for el in parser.css("li.model a[href]"):
+            href = el.attributes.get("href")
+            if href:
+                pornstars_urls.append(href if href.startswith("http") else f"https://xvideos.com{href}")
 
         return {
             "title": title,
@@ -272,7 +339,7 @@ class Video(BaseMedia):
             "embed_url": embed_url,
             "length": length,
             "author_link": author_link,
-            "pornstars_urls": pornstars,
+            "pornstars_urls": pornstars_urls,
         }
 
     async def download(self, configuration: DownloadConfigHLS) -> bool | DownloadReport:
@@ -338,6 +405,7 @@ class BaseChannelPornstar(BaseMedia):
     loader_methods: ClassVar[dict[str, str]] = {"html": "_load_html"}
 
     async def _load_html(self) -> dict[str, object]:
+        self.url = self.url.split("#")[0].rstrip("/")
         self._sanitize_url()
 
         json_data = asyncio.create_task(get_html_content(url=f"{self.url}/videos/best/0", core=self.core))
@@ -354,36 +422,63 @@ class BaseChannelPornstar(BaseMedia):
     def _sanitize_url(self):
         ...
 
-
     @staticmethod
-    def _extract_data(html_content: str, base_content: str):
-        json_data = json.loads(base_content)
-        parser = LexborHTMLParser(html_content)
+    def _extract_data(html_content: str, base_content: str, parser: LexborHTMLParser | None = None) -> dict[str, object]:
+        if parser is None:
+            parser = LexborHTMLParser(html_content)
 
-        name = parser.css_first('h2 strong.text-danger').text()
-        thumbnail_url = parser.css_first('div.profile-pic img').attributes.get('src')
-        total_videos = int(json_data["nb_videos"])
-        per_page = int(json_data["nb_per_page"])
-        total_pages = math.ceil(total_videos / per_page)
-        profile_hits = parser.css_first('#pinfo-profile-hits span').text(strip=True)
-        subscribers = parser.css_first('#pinfo-subscribers span').text(strip=True)
-        try:
-            total_video_views = parser.css_first('#pinfo-videos-views span').text(strip=True)
+        name_node = parser.css_first("h2 strong.text-danger") or parser.css_first("h2 strong")
+        name = name_node.text(strip=True) if name_node else None
 
-        except AttributeError:
-            paragraphs = parser.css('#pfinfo-col-col1 p')
-            # Assuming 'Total Videoaufrufe' is always the 5th <p> tag (index 4)
-            if len(paragraphs) > 4:
-                total_video_views = paragraphs[4].css_first('span').text(strip=True)
+        img_node = parser.css_first("div.profile-pic img") or parser.css_first(".profile-pic img")
+        thumbnail_url = img_node.attributes.get("src") if img_node else None
 
-        signed_up = parser.css_first('#pinfo-signedup span').text(strip=True)
-        try:
-            last_activity = parser.css_first('#pinfo-lastactivity span').text(strip=True)
-        except AttributeError:
-            last_activity = None # Can be None sometimes, because it's not always available on the page lol
+        total_videos = None
+        per_page = None
+        total_pages = None
+        if base_content:
+            try:
+                json_data = json.loads(base_content)
+                if "nb_videos" in json_data:
+                    total_videos = int(json_data["nb_videos"])
+                if "nb_per_page" in json_data:
+                    per_page = int(json_data["nb_per_page"])
+                if total_videos is not None and per_page:
+                    total_pages = math.ceil(total_videos / per_page)
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
 
-        names = parser.css('#pinfo-workedfor a')
-        worked_for_with_links = [a.attributes.get('href') for a in names if a.attributes.get('href')]
+        if total_videos is None:
+            count_node = parser.css_first("#tab-videos span.count")
+            if count_node:
+                raw_count = count_node.text(strip=True).replace(".", "").replace(",", "")
+                try:
+                    total_videos = int(raw_count)
+                    per_page = 24
+                    total_pages = math.ceil(total_videos / per_page)
+                except ValueError:
+                    pass
+
+        profile_hits_node = parser.css_first("#pinfo-profile-hits span")
+        profile_hits = profile_hits_node.text(strip=True) if profile_hits_node else None
+
+        subs_node = parser.css_first("#pinfo-subscribers span") or parser.css_first(".user-subscribe .count")
+        subscribers = subs_node.text(strip=True) if subs_node else None
+
+        views_node = parser.css_first("#pinfo-videos-views span") or parser.css_first("h2 small.mobile-only-hide span.mobile-hide")
+        total_videos_views = views_node.text(strip=True) if views_node else None
+
+        signed_node = parser.css_first("#pinfo-signedup span")
+        signed_up = signed_node.text(strip=True) if signed_node else None
+
+        act_node = parser.css_first("#pinfo-lastactivity span")
+        last_activity = act_node.text(strip=True) if act_node else None
+
+        worked_for_with_links = [
+            a.attributes.get("href")
+            for a in parser.css("#pinfo-workedfor a[href]")
+            if a.attributes.get("href")
+        ]
 
         return {
             "name": name,
@@ -393,7 +488,7 @@ class BaseChannelPornstar(BaseMedia):
             "total_pages": total_pages,
             "profile_hits": profile_hits,
             "subscribers": subscribers,
-            "total_videos_views": total_video_views,
+            "total_videos_views": total_videos_views,
             "signed_up": signed_up,
             "last_activity": last_activity,
             "worked_for_with_links": worked_for_with_links,
@@ -403,12 +498,13 @@ class BaseChannelPornstar(BaseMedia):
         await self.load_fields("worked_for_with_links")
         links_corrected = []
 
-        for link in self.worked_for_with_links:
-            if not "profile" in link:
-                links_corrected.append(f"https://xvideos.com/channels{link}")
-
-            else:
+        for link in self.worked_for_with_links or []:
+            if link.startswith("http"):
+                links_corrected.append(link)
+            elif link.startswith("/profiles") or link.startswith("/channels"):
                 links_corrected.append(f"https://xvideos.com{link}")
+            else:
+                links_corrected.append(f"https://xvideos.com/channels{link}")
 
         channels = [Channel(core=self.core, url=url) for url in links_corrected]
         if load_html:
@@ -458,17 +554,31 @@ class Pornstar(BaseChannelPornstar):
     age: str | None = media_field("html")
     video_tags: str | None = media_field("html")
 
-    @staticmethod
-    def _extract_data(html_content: str, base_content: str) -> dict:
-        data = BaseChannelPornstar._extract_data(html_content, base_content)
-        parser = LexborHTMLParser(html_content)
-        data["gender"] = parser.css_first('#pinfo-sex span').text(strip=True)
-        try:
-            data["age"] = parser.css_first('#pinfo-age span').text(strip=True)
-        except AttributeError:
-            data["age"] = None
+    def _sanitize_url(self):
+        if "/pornstars/" not in self.url and "profiles" not in self.url:
+            self.url = self.url.replace("xvideos.com/", "xvideos.com/pornstars/")
 
-        data["video_tags"] = parser.css_first('#pinfo-video-tags span').text(strip=True)
+    @staticmethod
+    def _extract_data(html_content: str, base_content: str, parser: LexborHTMLParser | None = None) -> dict:
+        if parser is None:
+            parser = LexborHTMLParser(html_content)
+        data = BaseChannelPornstar._extract_data(html_content, base_content, parser=parser)
+
+        sex_node = parser.css_first("#pinfo-sex span")
+        data["gender"] = sex_node.text(strip=True) if sex_node else None
+
+        age_node = parser.css_first("#pinfo-age span")
+        if age_node:
+            data["age"] = age_node.text(strip=True)
+        else:
+            header_small = parser.css_first("h2 small.mobile-hide")
+            if header_small and (match := re.search(r"\b(\d{1,2})\s*(?:y\b|yo\b|years?\b|jahre\b)", header_small.text(), re.IGNORECASE)):
+                data["age"] = match.group(1)
+            else:
+                data["age"] = None
+
+        tags_node = parser.css_first("#pinfo-video-tags span")
+        data["video_tags"] = tags_node.text(strip=True) if tags_node else None
         return data
 
 
