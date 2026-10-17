@@ -1,5 +1,6 @@
 from __future__ import annotations
 import re
+from functools import partial
 import math
 import json
 import html
@@ -7,6 +8,8 @@ import asyncio
 import argparse
 
 from xvideos_api.modules import errors as provider_errors
+from base_api import append_url_path, profile_base_url, replace_url_path
+from urllib.parse import urlsplit
 from base_api.modules.provider import fetch_content, download_errors, download_hls
 from base_api.modules.logger import configure_app_logging, get_logger
 import logging
@@ -39,6 +42,7 @@ from base_api import (
 
 from xvideos_api.modules.errors import (NotFound, NetworkError, UnknownNetworkError, BotDetection,
                                         ProxyError, DownloadFailed, NoLoginCookies)
+from xvideos_api.modules.consts import extractor_profile_json
 from xvideos_api.modules.consts import (cookies, headers, extractor_account, REGEX_VIDEO_M3U8, REGEX_IFRAME)
 from xvideos_api.modules.sorting import Sort, SortVideoTime, SortQuality, SortDate
 
@@ -332,6 +336,25 @@ class Video(BaseMedia):
 
 
 
+def _profile_url(url: str, default_section: str) -> str:
+    parsed = urlsplit(url)
+    if parsed.fragment.startswith("quickies/"):
+        raise ValueError("Quickies links are not regular profile URLs")
+    parts = [part for part in parsed.path.split("/") if part]
+    aliases = {"model": "pornstars", "models": "pornstars", "pornstar": "pornstars",
+               "pornstars": "pornstars", "channel": "channels", "channels": "channels",
+               "profiles": "profiles", "amateur-channels": "amateur-channels"}
+    if parts and parts[0] in aliases:
+        if len(parts) < 2:
+            raise ValueError("An individual profile URL is required")
+        section, name = aliases[parts[0]], parts[1]
+    elif len(parts) >= 1:
+        section, name = default_section, parts[0]
+    else:
+        raise ValueError("An individual profile URL is required")
+    return profile_base_url(replace_url_path(url, f"/{section}/{name}"))
+
+
 @dataclass(kw_only=True, slots=True)
 class BaseChannelPornstar(BaseMedia):
     url: str
@@ -351,13 +374,10 @@ class BaseChannelPornstar(BaseMedia):
     loader_methods: ClassVar[dict[str, str]] = {"html": "_load_html"}
 
     async def _load_html(self) -> dict[str, object]:
-        self.url = self.url.split("#")[0].rstrip("/")
         self._sanitize_url()
-
-        json_data = asyncio.create_task(get_html_content(url=f"{self.url}/videos/best/0", core=self.core, owner=self))
-        html_content = asyncio.create_task(get_html_content(url=f"{self.url}#_tabAboutMe", core=self.core, owner=self))
-
-        json_data, html_content = await asyncio.gather(json_data, html_content)
+        html_content = await get_html_content(url=self.url, core=self.core, owner=self)
+        base_url = profile_base_url(self.resolved_url or self.url)
+        json_data = await get_html_content(url=append_url_path(base_url, "videos", "best", 0), core=self.core, owner=self)
 
         return await asyncio.to_thread(
             self._extract_data,
@@ -468,8 +488,8 @@ class BaseChannelPornstar(BaseMedia):
 
         if pages == 0:
             pages = total_pages
-        url = self.url
-        page_urls = [f"{url}/videos/best/{i}" for i in range(pages)] # Don't exceed total available pages
+        base_url = profile_base_url(self.resolved_url or self.url)
+        page_urls = [append_url_path(base_url, "videos", "best", i) for i in range(pages)]
         if iterator_config is None:
             iterator_config = make_iterator_config()
 
@@ -477,7 +497,7 @@ class BaseChannelPornstar(BaseMedia):
             core=self.core,
             constructor=Video,
             target_page_urls=page_urls,
-            item_extractor=extractor_account,
+            item_extractor=partial(extractor_profile_json, base_url=base_url),
             iterator_config=iterator_config,
         )
         async for scrape_result in stream:
@@ -490,8 +510,7 @@ class Channel(BaseChannelPornstar):
     core: BaseCore
 
     def _sanitize_url(self):
-        if "/channels/" not in self.url and "profiles" not in self.url:
-            self.url = self.url.replace("xvideos.com/", "xvideos.com/channels/")
+        self.url = _profile_url(self.url, "channels")
 
 
 @dataclass(kw_only=True, slots=True)
@@ -501,8 +520,7 @@ class Pornstar(BaseChannelPornstar):
     video_tags: str | None = media_field("html")
 
     def _sanitize_url(self):
-        if "/pornstars/" not in self.url and "profiles" not in self.url:
-            self.url = self.url.replace("xvideos.com/", "xvideos.com/pornstars/")
+        self.url = _profile_url(self.url, "pornstars")
 
     @staticmethod
     def _extract_data(html_content: str, base_content: str, parser: LexborHTMLParser | None = None) -> dict:
@@ -598,7 +616,8 @@ class Client:
         pages: int = 2,
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
-        page_urls = [f"{url}/{page}" for page in range(pages)]
+        base_url = profile_base_url(url, depth=3)
+        page_urls = [append_url_path(base_url, page) for page in range(pages)]
         if iterator_config is None:
             iterator_config = make_iterator_config()
 

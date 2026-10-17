@@ -1,3 +1,6 @@
+import json
+from urllib.parse import urljoin, urlsplit, urlunsplit
+
 import re
 
 from selectolax.lexbor import LexborHTMLParser
@@ -31,7 +34,35 @@ session_token_auth = <token>
 """
 
 
-def extractor_account(html: str) -> list[dict[str, str]]:
+def extractor_profile_json(content: str, base_url: str = "https://www.xvideos.com") -> list[dict]:
+    data = json.loads(content)
+    videos = data.get("videos", [])
+    if not isinstance(videos, list):
+        raise ValueError("Profile listing did not contain a videos array")
+    results = []
+    for item in videos:
+        if not isinstance(item, dict) or not item.get("u"):
+            continue
+        url = urljoin(base_url, item["u"])
+        parsed = urlsplit(url)
+        parts = parsed.path.strip("/").split("/")
+        # Profile click links are redirects; use their actual video ID, not eid.
+        if parts[0] == "prof-video-click":
+            if len(parts) < 5:
+                continue
+            url = urlunsplit(parsed._replace(path="/video." + parts[-2] + "/" + parts[-1], fragment=""))
+        results.append({
+            "url": url,
+            "video_id": str(item["id"]) if item.get("id") is not None else None,
+            "title": item.get("tf") or item.get("t"),
+            "thumbnail_url": item.get("i"),
+            "length": item.get("d"),
+            "views": str(item["n"]) if item.get("n") is not None else None,
+        })
+    return results
+
+
+def extractor_account(html: str, base_url: str = "https://www.xvideos.com") -> list[dict[str, str]]:
     videos = []
     tree = LexborHTMLParser(html)
 
@@ -44,7 +75,7 @@ def extractor_account(html: str) -> list[dict[str, str]]:
         _video_url = a_node.attributes.get("href")
         if not isinstance(_video_url, str) or not _video_url:
             continue
-        video_url = _video_url if _video_url.startswith("http") else f"https://www.xvideos.com{_video_url}"
+        video_url = urljoin(base_url, _video_url)
 
         _img = video.css_first("img")
         thumbnail = (_img.attributes.get("src") or _img.attributes.get("data-src")) if _img else None
