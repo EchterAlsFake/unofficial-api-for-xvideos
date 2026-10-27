@@ -6,6 +6,7 @@ import json
 import html
 import asyncio
 import argparse
+from contextlib import aclosing
 
 from xvideos_api.modules import errors as provider_errors
 from base_api import append_url_path, profile_base_url, replace_url_path
@@ -154,6 +155,7 @@ class Video(BaseMedia):
     rating_votes: str | None = media_field("html")
     comment_count: str | None = media_field("html")
     author_link: str | None = media_field("html")
+    author_name: str | None = media_field("html")
     length: str | None = media_field("html")
     pornstars_urls: list | None = media_field("html")
     embed_url: str | None = media_field("html")
@@ -185,11 +187,16 @@ class Video(BaseMedia):
 
         # Title
         title = None
-        if raw_title := data.get("name"):
+        title_node = parser.css_first("#title-auto-tr")
+        if title_node:
+            title = title_node.text(strip=True)
+        elif raw_title := data.get("name"):
             title = html.unescape(raw_title)
         elif match := re.search(r"html5player\.setVideoTitle\('([^']+)'\)", html_content):
             title = html.unescape(match.group(1))
-        elif title_node := parser.css_first("#title-auto-tr, .page-title, .video-title"):
+        elif title_node := parser.css_first(".page-title, .video-title"):
+            for bad_span in title_node.css(".duration, .video-hd-mark, .icon-f, .badge"):
+                bad_span.decompose()
             title = title_node.text(strip=True)
 
         # Description
@@ -276,11 +283,20 @@ class Video(BaseMedia):
 
         # Author link
         author_link = None
+        author_name = None
         uploader_node = parser.css_first("li.main-uploader a")
         if uploader_node and (href := uploader_node.attributes.get("href")):
             author_link = href if href.startswith("http") else f"https://xvideos.com{href}"
+            name_node = uploader_node.css_first(".name")
+            if name_node is not None:
+                author_name = name_node.text(strip=True) or None
         elif match := re.search(r"html5player\.setUploaderName\('([^']+)'\)", html_content):
             author_link = f"https://xvideos.com/{match.group(1)}"
+            author_name = match.group(1)
+
+        if not author_name:
+            if match := re.search(r"html5player\.setUploaderName\('([^']+)'\)", html_content):
+                author_name = match.group(1)
 
         # Featured pornstars
         pornstars_urls = []
@@ -306,6 +322,7 @@ class Video(BaseMedia):
             "embed_url": embed_url,
             "length": length,
             "author_link": author_link,
+            "author_name": author_name,
             "pornstars_urls": pornstars_urls,
         }
 
@@ -314,23 +331,53 @@ class Video(BaseMedia):
         return await download_hls(self, configuration)
 
     @property
-    async def get_author(self, load_html: bool = True) -> Channel | None:
-        url = await self.get_field("author_link")
-
-        if url:
-            channel = Channel(url=url, core=self.core)
-            if load_html:
-                await channel.load_sources("html")
-            return channel
-
-        return None
+    def get_author(self) -> _AwaitableAuthor:
+        return _AwaitableAuthor(self, load_html=True)
 
     @property
-    async def get_pornstars(self, load_html: bool = True) -> AsyncGenerator[Pornstar, None]:
-        pornstars_urls = await self.get_field("pornstars_urls")
-        for url in pornstars_urls:
-            star = Pornstar(url=url, core=self.core)
-            if load_html:
+    def get_pornstars(self) -> _AsyncGenPornstars:
+        return _AsyncGenPornstars(self, load_html=True)
+
+
+class _AwaitableAuthor:
+    """Supports both property access (await video.get_author) and method call (await video.get_author())."""
+    def __init__(self, video: Video, load_html: bool = True):
+        self._video = video
+        self._load_html = load_html
+
+    def __call__(self, load_html: bool = True) -> _AwaitableAuthor:
+        return _AwaitableAuthor(self._video, load_html=load_html)
+
+    def __await__(self):
+        return self._run().__await__()
+
+    async def _run(self) -> Channel | None:
+        url = await self._video.get_field("author_link")
+        if url:
+            channel = Channel(url=url, core=self._video.core)
+            if self._load_html:
+                await channel.load_sources("html")
+            return channel
+        return None
+
+
+class _AsyncGenPornstars:
+    """Supports both property iteration (async for p in video.get_pornstars) and method call (async for p in video.get_pornstars())."""
+    def __init__(self, video: Video, load_html: bool = True):
+        self._video = video
+        self._load_html = load_html
+
+    def __call__(self, load_html: bool = True) -> _AsyncGenPornstars:
+        return _AsyncGenPornstars(self._video, load_html=load_html)
+
+    def __aiter__(self):
+        return self._run().__aiter__()
+
+    async def _run(self) -> AsyncGenerator[Pornstar, None]:
+        pornstars_urls = await self._video.get_field("pornstars_urls")
+        for url in pornstars_urls or []:
+            star = Pornstar(url=url, core=self._video.core)
+            if self._load_html:
                 await star.load_sources("html")
             yield star
 
@@ -359,6 +406,7 @@ def _profile_url(url: str, default_section: str) -> str:
 class BaseChannelPornstar(BaseMedia):
     url: str
     core: BaseCore
+    default_section: ClassVar[str] = "channels"
     name: str | None = media_field("html")
     thumbnail_url: str | None = media_field("html")
     total_videos: int | None = media_field("html")
@@ -376,8 +424,11 @@ class BaseChannelPornstar(BaseMedia):
     async def _load_html(self) -> dict[str, object]:
         self._sanitize_url()
         html_content = await get_html_content(url=self.url, core=self.core, owner=self)
-        base_url = profile_base_url(self.resolved_url or self.url)
-        json_data = await get_html_content(url=append_url_path(base_url, "videos", "best", 0), core=self.core, owner=self)
+        base_url = _profile_url(self.resolved_url or self.url, getattr(self, "default_section", "channels"))
+        try:
+            json_data = await get_html_content(url=append_url_path(base_url, "videos", "best", 0), core=self.core, owner=self)
+        except Exception:
+            json_data = ""
 
         return await asyncio.to_thread(
             self._extract_data,
@@ -460,21 +511,33 @@ class BaseChannelPornstar(BaseMedia):
             "worked_for_with_links": worked_for_with_links,
         }
 
-    async def worked_for_with(self, load_html: bool = True) -> list[Channel]:
+    async def worked_for_with(self, load_html: bool = True, limit: int | None = None) -> list[Channel]:
         await self.load_fields("worked_for_with_links")
         links_corrected = []
 
         for link in self.worked_for_with_links or []:
             if link.startswith("http"):
                 links_corrected.append(link)
-            elif link.startswith("/profiles") or link.startswith("/channels"):
+            elif link.startswith("/profiles") or link.startswith("/channels") or link.startswith("/pornstars") or link.startswith("/models"):
                 links_corrected.append(f"https://xvideos.com{link}")
             else:
                 links_corrected.append(f"https://xvideos.com/channels{link}")
 
+        if limit is not None and limit >= 0:
+            links_corrected = links_corrected[:limit]
+
         channels = [Channel(core=self.core, url=url) for url in links_corrected]
-        if load_html:
-            await asyncio.gather(*(channel.load_sources("html") for channel in channels))
+        if load_html and channels:
+            sem = asyncio.Semaphore(10)
+
+            async def _safe_load(ch: Channel):
+                async with sem:
+                    try:
+                        await ch.load_sources("html")
+                    except Exception:
+                        pass
+
+            await asyncio.gather(*(_safe_load(ch) for ch in channels))
         return channels
 
     async def videos(
@@ -483,12 +546,13 @@ class BaseChannelPornstar(BaseMedia):
         iterator_config: IteratorConfig | None = None,
     ) -> AsyncGenerator[ScrapeResult[Video], None]:
         total_pages = await self.get_field("total_pages")
-        if pages > total_pages:
+        if total_pages is None or total_pages <= 0:
+            return
+
+        if pages <= 0 or pages > total_pages:
             pages = total_pages
 
-        if pages == 0:
-            pages = total_pages
-        base_url = profile_base_url(self.resolved_url or self.url)
+        base_url = _profile_url(self.resolved_url or self.url, getattr(self, "default_section", "channels"))
         page_urls = [append_url_path(base_url, "videos", "best", i) for i in range(pages)]
         if iterator_config is None:
             iterator_config = make_iterator_config()
@@ -500,27 +564,30 @@ class BaseChannelPornstar(BaseMedia):
             item_extractor=partial(extractor_profile_json, base_url=base_url),
             iterator_config=iterator_config,
         )
-        async for scrape_result in stream:
-            yield scrape_result
+        async with aclosing(stream):
+            async for scrape_result in stream:
+                yield scrape_result
 
 
 @dataclass(kw_only=True, slots=True)
 class Channel(BaseChannelPornstar):
     url: str
     core: BaseCore
+    default_section: ClassVar[str] = "channels"
 
     def _sanitize_url(self):
-        self.url = _profile_url(self.url, "channels")
+        self.url = _profile_url(self.url, self.default_section)
 
 
 @dataclass(kw_only=True, slots=True)
 class Pornstar(BaseChannelPornstar):
+    default_section: ClassVar[str] = "pornstars"
     gender: str | None = media_field("html")
     age: str | None = media_field("html")
     video_tags: str | None = media_field("html")
 
     def _sanitize_url(self):
-        self.url = _profile_url(self.url, "pornstars")
+        self.url = _profile_url(self.url, self.default_section)
 
     @staticmethod
     def _extract_data(html_content: str, base_content: str, parser: LexborHTMLParser | None = None) -> dict:
@@ -567,24 +634,24 @@ class Client:
             await video.load_sources("html")
         return video
 
-    def search(self, query: str, sorting_sort: str | Sort = Sort.Sort_relevance,
-               sorting_date: str | SortDate = SortDate.Sort_all,
-               sorting_time: str | SortVideoTime = SortVideoTime.Sort_all,
-               sort_quality: str | SortQuality = SortQuality.Sort_all,
-               pages: int | str = "all",
-               iterator_config: IteratorConfig | None = None,
-                      ) -> AsyncGenerator[ScrapeResult[Video], None]:
-
-
-        query = query.replace(" ", "+")
-        p = urlparse(f"https://www.xvideos.com/")
+    def search(
+        self,
+        query: str,
+        sorting_sort: str | Sort = Sort.Sort_relevance,
+        sorting_date: str | SortDate = SortDate.Sort_all,
+        sorting_time: str | SortVideoTime = SortVideoTime.Sort_all,
+        sort_quality: str | SortQuality = SortQuality.Sort_all,
+        pages: int | str = 2,
+        iterator_config: IteratorConfig | None = None,
+    ) -> AsyncGenerator[ScrapeResult[Video], None]:
+        p = urlparse("https://www.xvideos.com/")
         qs = parse_qs(p.query)
         queries = {
             "k": query,
             "sort": sorting_sort,
             "datef": sorting_date,
             "durf": sorting_time,
-            "quality": sort_quality
+            "quality": sort_quality,
         }
 
         for key, value in queries.items():
@@ -594,10 +661,19 @@ class Client:
         new_query = urlencode(qs, doseq=True)
         url = urlunparse(p._replace(query=new_query))
 
-        page_urls = [] # Empty page urls will lead to automatic iteration
-
         if isinstance(pages, int):
-            page_urls = [f"{url}&p={p}" for p in range(pages)]
+            num_pages = max(0, pages)
+        elif isinstance(pages, str) and pages.isdigit():
+            num_pages = max(0, int(pages))
+        elif pages == "all":
+            num_pages = 10
+        else:
+            num_pages = 2
+
+        page_urls = [
+            url if p_idx == 0 else f"{url}&p={p_idx}"
+            for p_idx in range(num_pages)
+        ]
 
         if iterator_config is None:
             iterator_config = make_iterator_config()

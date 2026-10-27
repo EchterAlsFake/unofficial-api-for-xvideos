@@ -9,6 +9,9 @@ from xvideos_api import api as api
 
 
 class EmptyStream:
+    async def aclose(self):
+        pass
+
     async def __aenter__(self):
         return self
 

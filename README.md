@@ -33,6 +33,10 @@
 | **CLI Support** | Command-line interface for quick downloads — run `xvideos_api -h` for options |
 | **Type Safety** | Comprehensive type hinting and `dataclass`-based models throughout |
 
+`Video.author_name` provides the uploader display name directly from the video
+page, without fetching the uploader's channel or video statistics. Use
+`await video.get_author` when you need the actual profile object.
+
 #### Networking Features
 
 The networking layer is provided by the [`eaf_base_api`](https://github.com/EchterAlsFake/eaf_base_api) package and is fully configurable through `RuntimeConfig`:

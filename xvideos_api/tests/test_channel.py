@@ -19,7 +19,9 @@ async def test_channel():
     assert isinstance(channel.total_videos_views, str)
     assert isinstance(channel.worked_for_with_links, list)
 
-    for thing in await channel.worked_for_with():
+    worked = await channel.worked_for_with(limit=5)
+    assert len(worked) > 0
+    for thing in worked:
         assert isinstance(thing.name, str)
 
     idx = 0
