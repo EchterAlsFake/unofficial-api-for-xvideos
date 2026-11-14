@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.4 - 2026-11-14
+
+- Retain cast labels and URLs, and qualify upload dates instead of treating page-comment timestamps as publication dates.
+
 ## 2.5.3 — 2026-10-27
 
 - Fix default search pagination and avoid double-encoding spaces in search terms.

@@ -158,6 +158,8 @@ class Video(BaseMedia):
     author_name: str | None = media_field("html")
     length: str | None = media_field("html")
     pornstars_urls: list | None = media_field("html")
+    performers: list[dict] | None = media_field("html")
+    publish_date_source: str | None = media_field("html")
     embed_url: str | None = media_field("html")
     cdn_url: str | None = None
     m3u8_base_url: str | None = media_field("html")
@@ -226,9 +228,6 @@ class Video(BaseMedia):
 
         # Publish date
         publish_date = data.get("uploadDate")
-        if not publish_date:
-            if match := re.search(r"<!--\s*dispo\s*-\s*([A-Za-z]+,\s*\d+\s+[A-Za-z]+\s+\d+\s+\d+:\d+:\d+\s+[+\-]?\d*)", html_content):
-                publish_date = match.group(1)
 
         # Content URL
         content_url = data.get("contentUrl")
@@ -300,10 +299,14 @@ class Video(BaseMedia):
 
         # Featured pornstars
         pornstars_urls = []
+        performers = []
         for el in parser.css("li.model a[href]"):
             href = el.attributes.get("href")
             if href:
                 pornstars_urls.append(href if href.startswith("http") else f"https://xvideos.com{href}")
+                label = el.css_first(".name") or el
+                if name := label.text(strip=True):
+                    performers.append({"name": name, "url": pornstars_urls[-1]})
 
         return {
             "title": title,
@@ -324,6 +327,8 @@ class Video(BaseMedia):
             "author_link": author_link,
             "author_name": author_name,
             "pornstars_urls": pornstars_urls,
+            "performers": performers,
+            "publish_date_source": "uploadDate" if publish_date else None,
         }
 
     @download_errors(DownloadFailed)
