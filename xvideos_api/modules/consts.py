@@ -32,6 +32,10 @@ session_token_auth = <token>
 
 def extractor_profile_json(content: str, base_url: str = "https://www.xvideos.com") -> list[dict]:
     data = json.loads(content)
+    if "videos" not in data and not (
+        data.get("result") is False and data.get("code") == 404
+    ):
+        raise ValueError("Profile listing omitted its videos array")
     videos = data.get("videos", [])
     if not isinstance(videos, list):
         raise ValueError("Profile listing did not contain a videos array")
@@ -48,7 +52,9 @@ def extractor_profile_json(content: str, base_url: str = "https://www.xvideos.co
                 continue
             url = urlunsplit(parsed._replace(path="/video." + parts[-2] + "/" + parts[-1], fragment=""))
         raw_title = item.get("tf") or item.get("t")
-        title = html.unescape(raw_title) if raw_title else None
+        # The live JSON can encode a numeric title (for example 500) as an
+        # integer. Keep that video instead of failing the entire source page.
+        title = html.unescape(str(raw_title)) if raw_title is not None else None
         results.append({
             "url": url,
             "video_id": str(item["id"]) if item.get("id") is not None else None,
@@ -77,6 +83,14 @@ def extractor_account(html: str, base_url: str = "https://www.xvideos.com") -> l
         _video_url = a_node.attributes.get("href")
         if not isinstance(_video_url, str) or not _video_url:
             continue
+        if urlsplit(_video_url).path.startswith("/search-video/"):
+            # Search can switch to opaque tracking links between requests. The
+            # card itself exposes the stable public video key; no token decoding
+            # or extra detail fetch is needed to construct its canonical route.
+            key = video.attributes.get("id", "").removeprefix("video_")
+            if not re.fullmatch(r"[a-zA-Z0-9]+", key):
+                raise ValueError("Tracked search card omitted its video key")
+            _video_url = "/video." + key + "/video"
         # Ensure it's actually a video link and not an ad or profile link
         if not (_video_url.startswith("/video.") or "/video" in _video_url):
             for candidate in video.css("a[href]"):

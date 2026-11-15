@@ -1,3 +1,19 @@
+# 3.0.0
+
+Release 3.0.0
+
+Update pagination handling, validation, and documentation.
+
+Changes since v2.5.4:
+
+```text
+README.md                     |  14 ++++
+ pyproject.toml                |   4 +-
+ xvideos_api/api.py            | 179 +++++++++++++++++++++++++++---------------
+ xvideos_api/modules/consts.py |  16 +++-
+ 4 files changed, 148 insertions(+), 65 deletions(-)
+```
+
 # Changelog
 
 ## 2.5.4 - 2026-11-14
